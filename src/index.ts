@@ -1,3 +1,4 @@
+import express from 'express';
 import { env } from './config/env';
 import { getPool, checkConnection, ensureSchema } from './infrastructure/persistence/database';
 import { PostgresDepartamentoRepository } from './infrastructure/persistence/PostgresDepartamentoRepository';
