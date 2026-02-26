@@ -49,8 +49,15 @@ export interface ElectionSummaryByCorporationRow {
 export interface CongresoResultadoRepository {
   findPaginated(page: number, limit: number): Promise<CongresoResultado[]>;
   getCount(): Promise<number>;
-  findSummaryByYearAndDepartments(year: number, codigoDepartamentos: string[]): Promise<CongresoSummaryRow[]>;
-  findTrendByDepartments(codigoDepartamentos: string[]): Promise<{ years: number[]; rows: CongresoTrendRow[] }>;
+  findSummaryByYearAndDepartments(
+    year: number,
+    codigoDepartamentos: string[],
+    corporacion?: string
+  ): Promise<CongresoSummaryRow[]>;
+  findTrendByDepartments(
+    codigoDepartamentos: string[],
+    corporacion?: string
+  ): Promise<{ years: number[]; rows: CongresoTrendRow[] }>;
   findYears(): Promise<number[]>;
   findCorporaciones(): Promise<string[]>;
   findTopPartidosByVotos(filters: {

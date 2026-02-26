@@ -149,10 +149,11 @@ export function createCongresoReportRoutes(
     try {
       const year = parseInt(String(req.query.year), 10) || new Date().getFullYear();
       const codes = parseDepartmentCodes(String(req.query.departments));
+      const corporation = String(req.query.corporation ?? '').trim() || undefined;
       if (codes.length === 0) {
         return res.json({ year, winningByDept: [], top5ByDept: {}, top5Parties: [] });
       }
-      const rows = await congresoRepository.findSummaryByYearAndDepartments(year, codes);
+      const rows = await congresoRepository.findSummaryByYearAndDepartments(year, codes, corporation);
       const winningByDept: { codigo_departamento: string; department: string; partyName: string; totalVotes: number }[] = [];
       const top5ByDept: Record<string, { partyName: string; votes: number; pct: number }[]> = {};
       const deptNames = await getDepartamentos.execute();
@@ -201,10 +202,11 @@ export function createCongresoReportRoutes(
   router.get('/trend', async (req: Request, res: Response) => {
     try {
       const codes = parseDepartmentCodes(String(req.query.departments));
+      const corporation = String(req.query.corporation ?? '').trim() || undefined;
       if (codes.length === 0) {
         return res.json({ years: [], series: [] });
       }
-      const { years, rows } = await congresoRepository.findTrendByDepartments(codes);
+      const { years, rows } = await congresoRepository.findTrendByDepartments(codes, corporation);
       const deptNames = await getDepartamentos.execute();
       const nameByCode: Record<string, string> = {};
       deptNames.forEach((d) => {

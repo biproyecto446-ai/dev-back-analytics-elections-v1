@@ -56,12 +56,14 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
 
   async findSummaryByYearAndDepartments(
     year: number,
-    codigoDepartamentos: string[]
+    codigoDepartamentos: string[],
+    corporacion?: string
   ): Promise<CongresoSummaryRow[]> {
     if (codigoDepartamentos.length === 0) return [];
-    // Normalizar códigos (quitar ceros a la izquierda) para que "011" y "11" coincidan
     const normalized = codigoDepartamentos.map((c) => String(c).trim().replace(/^0+/, '') || '0');
     const placeholders = normalized.map((_, i) => `$${i + 2}`).join(',');
+    const hasCorp = corporacion != null && String(corporacion).trim() !== '';
+    const corpCondition = hasCorp ? ` AND TRIM(COALESCE(corporacion, '')) = $${normalized.length + 2}` : '';
     const query = `
       WITH agg AS (
         SELECT codigo_departamento, partido, SUM(votos)::bigint AS votes
@@ -70,6 +72,7 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
           AND (TRIM(LEADING '0' FROM COALESCE(codigo_departamento::text, '')) IN (${placeholders})
                OR codigo_departamento::text IN (${placeholders}))
           AND partido IS NOT NULL AND TRIM(COALESCE(partido, '')) <> ''
+          ${corpCondition}
         GROUP BY codigo_departamento, partido
       ),
       ranked AS (
@@ -79,7 +82,8 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
       )
       SELECT codigo_departamento, partido, votes::int AS votes, rn FROM ranked
     `;
-    const result = await this.pool.query(query, [year, ...normalized]);
+    const params = hasCorp ? [year, ...normalized, String(corporacion).trim()] : [year, ...normalized];
+    const result = await this.pool.query(query, params);
     return result.rows.map((r: { codigo_departamento: string | number; partido: string; votes: number; rn: number }) => ({
       codigo_departamento: String(r.codigo_departamento ?? ''),
       partido: r.partido,
@@ -89,11 +93,15 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
   }
 
   async findTrendByDepartments(
-    codigoDepartamentos: string[]
+    codigoDepartamentos: string[],
+    corporacion?: string
   ): Promise<{ years: number[]; rows: CongresoTrendRow[] }> {
     if (codigoDepartamentos.length === 0) return { years: [], rows: [] };
+    const hasCorp = corporacion != null && String(corporacion).trim() !== '';
+    const corpCondition = hasCorp ? ' AND TRIM(COALESCE(corporacion, \'\')) = $' + (codigoDepartamentos.length + 2) : '';
     const yearsResult = await this.pool.query(
-      `SELECT DISTINCT anio_eleccion AS y FROM ${this.table} WHERE anio_eleccion IS NOT NULL ORDER BY anio_eleccion`
+      `SELECT DISTINCT anio_eleccion AS y FROM ${this.table} WHERE anio_eleccion IS NOT NULL ${hasCorp ? ' AND TRIM(COALESCE(corporacion, \'\')) = $1' : ''} ORDER BY anio_eleccion`,
+      hasCorp ? [String(corporacion).trim()] : []
     );
     const years = (yearsResult.rows as { y: number }[]).map((r) => r.y);
     if (years.length === 0) return { years: [], rows: [] };
@@ -101,10 +109,11 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
     const query = `
       SELECT anio_eleccion, codigo_departamento, partido, SUM(votos)::bigint AS votes
       FROM ${this.table}
-      WHERE anio_eleccion = ANY($1::int[]) AND codigo_departamento IN (${placeholders}) AND partido IS NOT NULL
+      WHERE anio_eleccion = ANY($1::int[]) AND codigo_departamento IN (${placeholders}) AND partido IS NOT NULL ${corpCondition}
       GROUP BY anio_eleccion, codigo_departamento, partido
     `;
-    const result = await this.pool.query(query, [years, ...codigoDepartamentos]);
+    const params = hasCorp ? [years, ...codigoDepartamentos, String(corporacion).trim()] : [years, ...codigoDepartamentos];
+    const result = await this.pool.query(query, params);
     const rows: CongresoTrendRow[] = result.rows.map(
       (r: { anio_eleccion: number; codigo_departamento: string; partido: string; votes: string }) => ({
         anio_eleccion: r.anio_eleccion,
