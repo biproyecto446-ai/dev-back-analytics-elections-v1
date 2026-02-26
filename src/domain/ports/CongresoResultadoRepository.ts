@@ -38,33 +38,47 @@ export interface ElectionSummaryRow {
   votosPartidoGanador: number;
 }
 
+export interface ElectionSummaryByCorporationRow {
+  year: number;
+  corporacion: string;
+  totalVotos: number;
+  partidoGanador: string;
+  votosPartidoGanador: number;
+}
+
 export interface CongresoResultadoRepository {
   findPaginated(page: number, limit: number): Promise<CongresoResultado[]>;
   getCount(): Promise<number>;
   findSummaryByYearAndDepartments(year: number, codigoDepartamentos: string[]): Promise<CongresoSummaryRow[]>;
   findTrendByDepartments(codigoDepartamentos: string[]): Promise<{ years: number[]; rows: CongresoTrendRow[] }>;
   findYears(): Promise<number[]>;
+  findCorporaciones(): Promise<string[]>;
   findTopPartidosByVotos(filters: {
     year?: number;
+    corporacion?: string;
     codigoDepartamento?: string;
     codigoMunicipio?: string;
     excludeParty?: string;
   }): Promise<TopPartidoRow[]>;
   findTotalVotosByPartido(filters: {
     year?: number;
+    corporacion?: string;
     codigoDepartamento?: string;
     codigoMunicipio?: string;
     partido: string;
   }): Promise<number>;
   findPartidosByScope(filters: {
     year?: number;
+    corporacion?: string;
     codigoDepartamento?: string;
     codigoMunicipio?: string;
   }): Promise<{ partido: string }[]>;
   findMunicipiosByDepartment(codigoDepartamento: string, year?: number): Promise<MunicipioOption[]>;
   findElectionsSummary(): Promise<ElectionSummaryRow[]>;
+  findElectionsSummaryByCorporation(): Promise<ElectionSummaryByCorporationRow[]>;
   findTotalVotosByScope(filters: {
     year?: number;
+    corporacion?: string;
     codigoDepartamento?: string;
     codigoMunicipio?: string;
   }): Promise<number>;

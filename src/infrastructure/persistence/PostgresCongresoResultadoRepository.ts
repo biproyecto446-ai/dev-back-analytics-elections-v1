@@ -7,6 +7,7 @@ import type {
   TopPartidoRow,
   MunicipioOption,
   ElectionSummaryRow,
+  ElectionSummaryByCorporationRow,
 } from '../../domain/ports/CongresoResultadoRepository';
 
 const MAX_LIMIT = 2000;
@@ -122,6 +123,13 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
     return (result.rows as { year: number }[]).map((r) => r.year);
   }
 
+  async findCorporaciones(): Promise<string[]> {
+    const result = await this.pool.query(
+      `SELECT DISTINCT corporacion AS corp FROM ${this.table} WHERE corporacion IS NOT NULL AND TRIM(COALESCE(corporacion, '')) <> '' ORDER BY corporacion`
+    );
+    return (result.rows as { corp: string | null }[]).map((r) => String(r.corp ?? '').trim()).filter(Boolean);
+  }
+
   /** Normaliza código para comparación: trim y quita ceros a la izquierda (evita desajustes entre front y BD). */
   private normalizeCode(value: string | number): string {
     const s = String(value).trim();
@@ -130,6 +138,7 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
 
   private buildScopeConditions(filters: {
     year?: number;
+    corporacion?: string;
     codigoDepartamento?: string;
     codigoMunicipio?: string;
   }): { conditions: string[]; params: (number | string)[] } {
@@ -139,6 +148,11 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
     if (filters.year != null && !Number.isNaN(filters.year)) {
       conditions.push(`anio_eleccion = $${paramIndex}`);
       params.push(filters.year);
+      paramIndex++;
+    }
+    if (filters.corporacion != null && String(filters.corporacion).trim() !== '') {
+      conditions.push(`TRIM(COALESCE(corporacion, '')) = $${paramIndex}`);
+      params.push(String(filters.corporacion).trim());
       paramIndex++;
     }
     if (filters.codigoDepartamento != null && String(filters.codigoDepartamento).trim() !== '') {
@@ -302,6 +316,44 @@ export class PostgresCongresoResultadoRepository implements CongresoResultadoRep
     const result = await this.pool.query(query);
     return (result.rows as { year: number; total_votos: number; partido_ganador: string; votos_ganador: number }[]).map((r) => ({
       year: r.year,
+      totalVotos: r.total_votos,
+      partidoGanador: r.partido_ganador || '—',
+      votosPartidoGanador: r.votos_ganador ?? 0,
+    }));
+  }
+
+  async findElectionsSummaryByCorporation(): Promise<ElectionSummaryByCorporationRow[]> {
+    const query = `
+      WITH by_year_corp_party AS (
+        SELECT anio_eleccion AS year,
+               COALESCE(TRIM(corporacion), 'Sin corporación') AS corporacion,
+               partido,
+               SUM(votos)::bigint AS total
+        FROM ${this.table}
+        WHERE anio_eleccion IS NOT NULL AND partido IS NOT NULL AND TRIM(COALESCE(partido, '')) <> ''
+        GROUP BY anio_eleccion, corporacion, partido
+      ),
+      by_year_corp AS (
+        SELECT year, corporacion, SUM(total)::bigint AS total_votos
+        FROM by_year_corp_party
+        GROUP BY year, corporacion
+      ),
+      ranked AS (
+        SELECT year, corporacion, partido, total,
+               ROW_NUMBER() OVER (PARTITION BY year, corporacion ORDER BY total DESC) AS rn
+        FROM by_year_corp_party
+      )
+      SELECT r.year::int AS year, r.corporacion, t.total_votos::int AS total_votos,
+             r.partido AS partido_ganador, r.total::int AS votos_ganador
+      FROM ranked r
+      JOIN by_year_corp t ON t.year = r.year AND t.corporacion = r.corporacion
+      WHERE r.rn = 1
+      ORDER BY r.year DESC, r.corporacion
+    `;
+    const result = await this.pool.query(query);
+    return (result.rows as { year: number; corporacion: string; total_votos: number; partido_ganador: string; votos_ganador: number }[]).map((r) => ({
+      year: r.year,
+      corporacion: r.corporacion || '—',
       totalVotos: r.total_votos,
       partidoGanador: r.partido_ganador || '—',
       votosPartidoGanador: r.votos_ganador ?? 0,

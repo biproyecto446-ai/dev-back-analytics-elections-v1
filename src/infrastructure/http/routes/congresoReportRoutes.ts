@@ -46,9 +46,30 @@ export function createCongresoReportRoutes(
     }
   });
 
+  router.get('/corporations', async (_req: Request, res: Response) => {
+    try {
+      const corporations = await congresoRepository.findCorporaciones();
+      res.json({ corporations });
+    } catch {
+      res.status(500).json({ error: 'Error al obtener corporaciones' });
+    }
+  });
+
   router.get('/elections-summary', async (_req: Request, res: Response) => {
     try {
-      const summaries = await congresoRepository.findElectionsSummary();
+      const rows = await congresoRepository.findElectionsSummaryByCorporation();
+      type CorpItem = { corporacion: string; totalVotos: number; partidoGanador: string; votosPartidoGanador: number };
+      const byYear = new Map<number, { year: number; corporations: CorpItem[] }>();
+      for (const r of rows) {
+        if (!byYear.has(r.year)) byYear.set(r.year, { year: r.year, corporations: [] });
+        byYear.get(r.year)!.corporations.push({
+          corporacion: r.corporacion,
+          totalVotos: r.totalVotos,
+          partidoGanador: r.partidoGanador,
+          votosPartidoGanador: r.votosPartidoGanador,
+        });
+      }
+      const summaries = Array.from(byYear.values()).sort((a, b) => b.year - a.year);
       res.json({ summaries });
     } catch {
       res.status(500).json({ error: 'Error al obtener resumen de elecciones' });
@@ -72,10 +93,12 @@ export function createCongresoReportRoutes(
   router.get('/parties', async (req: Request, res: Response) => {
     try {
       const year = req.query.year ? parseInt(String(req.query.year), 10) : undefined;
+      const corporation = String(req.query.corporation ?? '').trim() || undefined;
       const department = String(req.query.department ?? '').trim() || undefined;
       const municipality = String(req.query.municipality ?? '').trim() || undefined;
       const parties = await congresoRepository.findPartidosByScope({
         year,
+        corporacion: corporation,
         codigoDepartamento: department,
         codigoMunicipio: municipality,
       });
@@ -88,31 +111,22 @@ export function createCongresoReportRoutes(
   router.get('/top-partidos', async (req: Request, res: Response) => {
     try {
       const year = req.query.year ? parseInt(String(req.query.year), 10) : undefined;
+      const corporation = String(req.query.corporation ?? '').trim() || undefined;
       const department = String(req.query.department ?? '').trim() || undefined;
       const municipality = String(req.query.municipality ?? '').trim() || undefined;
       const excludeParty = String(req.query.excludeParty ?? '').trim() || undefined;
+      const scopeFilters = { year, corporacion: corporation, codigoDepartamento: department, codigoMunicipio: municipality };
       const [rows, totalVotosAmbito, totalVotosDepartamento] = await Promise.all([
-        congresoRepository.findTopPartidosByVotos({
-          year,
-          codigoDepartamento: department,
-          codigoMunicipio: municipality,
-          excludeParty,
-        }),
-        congresoRepository.findTotalVotosByScope({
-          year,
-          codigoDepartamento: department,
-          codigoMunicipio: municipality,
-        }),
+        congresoRepository.findTopPartidosByVotos({ ...scopeFilters, excludeParty }),
+        congresoRepository.findTotalVotosByScope(scopeFilters),
         municipality && department
-          ? congresoRepository.findTotalVotosByScope({ year, codigoDepartamento: department })
+          ? congresoRepository.findTotalVotosByScope({ year, corporacion: corporation, codigoDepartamento: department })
           : Promise.resolve(null),
       ]);
       let excludedParty: { name: string; totalVotos: number } | undefined;
       if (excludeParty) {
         const totalVotos = await congresoRepository.findTotalVotosByPartido({
-          year,
-          codigoDepartamento: department,
-          codigoMunicipio: municipality,
+          ...scopeFilters,
           partido: excludeParty,
         });
         excludedParty = { name: excludeParty, totalVotos };
