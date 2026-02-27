@@ -15,4 +15,5 @@ export interface KpiGestionTeridataRepository {
     codigoDepartamentos: string[],
     year?: number
   ): Promise<TeradataIndicatorsResult>;
+  findYears(): Promise<number[]>;
 }

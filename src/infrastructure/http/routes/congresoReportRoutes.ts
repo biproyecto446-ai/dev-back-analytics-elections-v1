@@ -2,17 +2,19 @@ import { Router, type Request, type Response } from 'express';
 import type { DepartamentoRepository } from '../../../domain/ports/DepartamentoRepository';
 import type { CongresoResultadoRepository } from '../../../domain/ports/CongresoResultadoRepository';
 import type { KpiGestionTeridataRepository } from '../../../domain/ports/KpiGestionTeridataRepository';
+import type { KpiRealidadDaneRepository } from '../../../domain/ports/KpiRealidadDaneRepository';
 import { GetDepartamentosUseCase } from '../../../application/use-cases/GetDepartamentos';
 
 const MAX_DEPTS = 3;
+const MAX_DEPTS_DANE = 5;
 
-function parseDepartmentCodes(str: string | undefined): string[] {
+function parseDepartmentCodes(str: string | undefined, max: number = MAX_DEPTS): string[] {
   if (!str) return [];
   const codes = str
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  return [...new Set(codes)].slice(0, MAX_DEPTS);
+  return [...new Set(codes)].slice(0, max);
 }
 
 /** Normaliza código de departamento para comparación (ej: "011" y "11" son iguales) */
@@ -23,7 +25,8 @@ function normDeptCode(c: string | number): string {
 export function createCongresoReportRoutes(
   departamentoRepository: DepartamentoRepository,
   congresoRepository: CongresoResultadoRepository,
-  teradataRepository: KpiGestionTeridataRepository
+  teradataRepository: KpiGestionTeridataRepository,
+  daneRepository: KpiRealidadDaneRepository
 ): Router {
   const router = Router();
   const getDepartamentos = new GetDepartamentosUseCase(departamentoRepository);
@@ -43,6 +46,20 @@ export function createCongresoReportRoutes(
       res.json({ years });
     } catch {
       res.status(500).json({ error: 'Error al obtener años' });
+    }
+  });
+
+  /** Años presentes en Teradata y DANE (para filtro en análisis de indicadores) */
+  router.get('/indicator-years', async (_req: Request, res: Response) => {
+    try {
+      const [teradataYears, daneYears] = await Promise.all([
+        teradataRepository.findYears(),
+        daneRepository.findYears(),
+      ]);
+      const combined = [...new Set([...teradataYears, ...daneYears])].sort((a, b) => a - b);
+      res.json({ years: combined });
+    } catch {
+      res.status(500).json({ error: 'Error al obtener años de indicadores', years: [] });
     }
   });
 
@@ -285,6 +302,39 @@ export function createCongresoReportRoutes(
       res.json({ groups, labels, series });
     } catch {
       res.status(500).json({ error: 'Error al obtener indicadores Teradata' });
+    }
+  });
+
+  router.get('/dane-indicators', async (req: Request, res: Response) => {
+    try {
+      const codes = parseDepartmentCodes(String(req.query.departments), MAX_DEPTS_DANE);
+      const year = req.query.year ? parseInt(String(req.query.year), 10) : undefined;
+      if (codes.length === 0) {
+        return res.json({ labels: [], series: [] });
+      }
+      const { variables, rows } = await daneRepository.findIndicatorsByDepartments(codes, year);
+      const deptNames = await getDepartamentos.execute();
+      const nameByCode: Record<string, string> = {};
+      deptNames.forEach((d) => {
+        nameByCode[d.codigo_departamento] = d.nombre;
+      });
+      const labels = variables.map((v) => v ?? '');
+      const series = codes.map((cod) => {
+        const data = variables.map((variable) => {
+          const r = rows.find(
+            (x) => normDeptCode(x.codigo_departamento) === normDeptCode(cod) && x.variable === variable
+          );
+          return r ? r.total : 0;
+        });
+        return {
+          department: nameByCode[cod] ?? cod,
+          codigo_departamento: cod,
+          data,
+        };
+      });
+      res.json({ labels, series });
+    } catch {
+      res.status(500).json({ error: 'Error al obtener indicadores DANE' });
     }
   });
 

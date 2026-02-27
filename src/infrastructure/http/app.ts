@@ -5,11 +5,13 @@ import { createCongresoResultadosRoutes } from './routes/congresoResultadosRoute
 import type { DepartamentoRepository } from '../../domain/ports/DepartamentoRepository';
 import type { CongresoResultadoRepository } from '../../domain/ports/CongresoResultadoRepository';
 import type { KpiGestionTeridataRepository } from '../../domain/ports/KpiGestionTeridataRepository';
+import type { KpiRealidadDaneRepository } from '../../domain/ports/KpiRealidadDaneRepository';
 
 export function createApp(
   departamentoRepository: DepartamentoRepository,
   congresoResultadoRepository: CongresoResultadoRepository,
-  teradataRepository: KpiGestionTeridataRepository
+  teradataRepository: KpiGestionTeridataRepository,
+  daneRepository: KpiRealidadDaneRepository
 ): express.Application {
   const app = express();
   app.use(cors());
@@ -21,7 +23,7 @@ export function createApp(
 
   app.use(
     '/api/congreso-report',
-    createCongresoReportRoutes(departamentoRepository, congresoResultadoRepository, teradataRepository)
+    createCongresoReportRoutes(departamentoRepository, congresoResultadoRepository, teradataRepository, daneRepository)
   );
   app.use('/api/congreso-resultados', createCongresoResultadosRoutes(congresoResultadoRepository));
 

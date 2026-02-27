@@ -62,4 +62,11 @@ export class PostgresKpiGestionTeridataRepository implements KpiGestionTeridataR
     const indicators = Array.from(indicatorSet).sort();
     return { indicators, rows };
   }
+
+  async findYears(): Promise<number[]> {
+    const result = await this.pool.query(
+      `SELECT DISTINCT anio FROM ${this.table} WHERE anio IS NOT NULL ORDER BY anio`
+    );
+    return (result.rows as { anio: number }[]).map((r) => Number(r.anio)).filter((y) => !Number.isNaN(y));
+  }
 }
